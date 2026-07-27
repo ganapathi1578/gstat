@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Split-Screen Badminton 3D Replay</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #1a1a1a;
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            height: 100vh;
+        }
+        #left-panel {
+            width: 50%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            border-right: 2px solid #333;
+            background: #000;
+        }
+        #right-panel {
+            width: 50%;
+            height: 100%;
+            position: relative;
+        }
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            outline: none;
+        }
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+        }
+        #loading {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.5rem;
+            color: #00ffcc;
+            z-index: 100;
+        }
+        .hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            pointer-events: none;
+        }
+        h2 { margin: 0 0 10px 0; font-size: 1.2rem; color: #00ffcc; }
+        p { margin: 5px 0; font-size: 0.9rem; }
+    </style>
+    <!-- Load Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+
+    <div id="left-panel">
+        <video id="video-player" controls muted>
+            <source src="../output/HSBC Play of the Day Impenetrable defence! - BWF TV (1080p, h264, youtube) (online-video-cutter.com)_hybrid_web.mp4" type="video/mp4">
+        </video>
+    </div>
+
+    <div id="right-panel">
+        <div id="loading">Loading 3D Engine & JSON Data...</div>
+        <div class="hud">
+            <h2>3D Analytics Engine</h2>
+            <p id="hud-frame">Frame: 0</p>
+            <p><strong>Controls:</strong> Click & Drag to rotate.</p>
+        </div>
+        <div id="canvas-container"></div>
+    </div>
+
+    <script>
+        const video = document.getElementById('video-player');
+        const loading = document.getElementById('loading');
+        const hudFrame = document.getElementById('hud-frame');
+        
+        let trackingData = null;
+        let fps = 30; // Default until loaded
+        
+        // --- 1. Three.js Setup ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1a1a1a);
+
+        const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+        camera.position.set(0, 8, 12);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.shadowMap.enabled = true;
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.maxPolarAngle = Math.PI / 2 - 0.05;
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+        dirLight.position.set(5, 15, 5);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
+
+        // --- 2. Build Court ---
+        const courtWidth = 6.10;
+        const courtLength = 13.40;
+        
+        const floorGeo = new THREE.PlaneGeometry(courtWidth + 2, courtLength + 2);
+        const floorMat = new THREE.MeshStandardMaterial({ color: 0x1f7a40, roughness: 0.9 });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 });
+        function drawLine(x1, z1, x2, z2) {
+            const points = [new THREE.Vector3(x1, 0.01, z1), new THREE.Vector3(x2, 0.01, z2)];
+            const geo = new THREE.BufferGeometry().setFromPoints(points);
+            scene.add(new THREE.Line(geo, lineMaterial));
+        }
+        const hw = courtWidth / 2, hl = courtLength / 2;
+        drawLine(-hw, -hl, hw, -hl); drawLine(-hw, hl, hw, hl);
+        drawLine(-hw, -hl, -hw, hl); drawLine(hw, -hl, hw, hl);
+        drawLine(0, -hl, 0, hl); drawLine(-hw, 0, hw, 0); // Center & Net
+
+        // Net
+        const netGeo = new THREE.PlaneGeometry(courtWidth, 0.76);
+        const netMat = new THREE.MeshBasicMaterial({ color: 0xdddddd, transparent: true, opacity: 0.3, side: THREE.DoubleSide, wireframe: true });
+        const net = new THREE.Mesh(netGeo, netMat);
+        net.position.set(0, 1.55 - 0.38, 0);
+        scene.add(net);
+
+        // --- 3. Dynamic Elements ---
+        const playersGroup = new THREE.Group();
+        scene.add(playersGroup);
+
+        const ballGeo = new THREE.SphereGeometry(0.12, 16, 16);
+        const ballMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+        const ballMesh = new THREE.Mesh(ballGeo, ballMat);
+        ballMesh.visible = false;
+        scene.add(ballMesh);
+        
+        // Shadow indicator for the ball
+        const shadowGeo = new THREE.CircleGeometry(0.1, 16);
+        const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5 });
+        const shadowMesh = new THREE.Mesh(shadowGeo, shadowMat);
+        shadowMesh.rotation.x = -Math.PI / 2;
+        shadowMesh.position.y = 0.02;
+        scene.add(shadowMesh);
+        
+        let homography = null;
+        let recentHits = [];
+
+        // Apply 3x3 Homography Matrix to 2D Screen Coords [u, v] -> 3D Floor [X, 0, Z]
+        function applyHomography(u, v) {
+            if (!homography) return null;
+            const H = homography;
+            const w = H[2][0] * u + H[2][1] * v + H[2][2];
+            if (w === 0) return null;
+            
+            // Raw mapping gives us X, Y in the court's physical space
+            // Where 0,0 is the top-left corner
+            const rawX = (H[0][0] * u + H[0][1] * v + H[0][2]) / w;
+            const rawY = (H[1][0] * u + H[1][1] * v + H[1][2]) / w;
+            
+            // Map to ThreeJS space (center of court is 0,0)
+            return { x: rawX - hw, z: rawY - hl };
+        }
+
+        // Create a simple skeleton billboard
+        function createPlayerSkeleton(playerData) {
+            const group = new THREE.Group();
+            const rx = playerData.real_world_x - hw;
+            const rz = playerData.real_world_y - hl;
+            group.position.set(rx, 0, rz);
+
+            const mat = new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 3 });
+            
+            if (playerData.keypoints && playerData.keypoints.length >= 17) {
+                let feetY = 0;
+                let headY = 10000;
+                playerData.keypoints.forEach(kp => {
+                    if (kp[1] > 0) {
+                        if (kp[1] > feetY) feetY = kp[1];
+                        if (kp[1] < headY) headY = kp[1];
+                    }
+                });
+                
+                const pixelHeight = feetY - headY;
+                if (pixelHeight > 10) {
+                    const physicalHeight = 1.75; 
+                    const scale = physicalHeight / pixelHeight;
+                    const centerU = playerData.bbox[0] + (playerData.bbox[2] - playerData.bbox[0])/2;
+                    
+                    const points3D = [];
+                    playerData.keypoints.forEach(kp => {
+                        if (kp[0] > 0 && kp[1] > 0) {
+                            points3D.push(new THREE.Vector3((kp[0] - centerU) * scale, (feetY - kp[1]) * scale, 0));
+                        } else {
+                            points3D.push(null);
+                        }
+                    });
+
+                    const edges = [
+                        [15,13], [13,11], [16,14], [14,12], [11,12],
+                        [5,11], [6,12], [5,6], [5,7], [7,9], [6,8], [8,10]
+                    ];
+                    
+                    edges.forEach(edge => {
+                        const p1 = points3D[edge[0]];
+                        const p2 = points3D[edge[1]];
+                        if (p1 && p2) {
+                            const geo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
+                            group.add(new THREE.Line(geo, mat));
+                        }
+                    });
+                    
+                    if (points3D[0]) {
+                        const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), new THREE.MeshBasicMaterial({color: 0xffffff}));
+                        headMesh.position.copy(points3D[0]);
+                        group.add(headMesh);
+                    }
+                }
+            }
+            return group;
+        }
+
+        // --- 4. Load JSON & Sync ---
+        const jsonUrl = '../output/HSBC Play of the Day Impenetrable defence! - BWF TV (1080p, h264, youtube) (online-video-cutter.com)_hybrid.json';
+        
+        fetch(jsonUrl)
+            .then(res => res.json())
+            .then(data => {
+                trackingData = data.frames;
+                if (data.metadata) {
+                    if (data.metadata.fps) fps = data.metadata.fps;
+                    if (data.metadata.homography) homography = data.metadata.homography;
+                }
+                
+                // Pre-calculate all hit events to easily find the speed at any frame
+                trackingData.forEach(f => {
+                    if(f.events && f.events.length > 0) {
+                        f.events.forEach(e => {
+                            if(e.event_type === "hit" && e.details && e.details.speed_kmh) {
+                                recentHits.push({ frame: f.frame, speed: e.details.speed_kmh });
+                            }
+                        });
+                    }
+                });
+                
+                loading.style.display = 'none';
+            })
+            .catch(err => {
+                loading.innerText = 'Error loading JSON data.';
+                console.error(err);
+            });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+
+            if (trackingData) {
+                const currentTime = video.currentTime;
+                let frameIdx = Math.floor(currentTime * fps);
+                if (frameIdx >= trackingData.length) frameIdx = trackingData.length - 1;
+                
+                // Find most recent speed
+                let latestSpeed = 0;
+                for (let i = recentHits.length - 1; i >= 0; i--) {
+                    if (recentHits[i].frame <= frameIdx) {
+                        latestSpeed = recentHits[i].speed;
+                        break;
+                    }
+                }
+                
+                hudFrame.innerHTML = `Frame: ${frameIdx} <br><br> <strong style="color:#ff0055; font-size:1.5rem;">SPEED: ${latestSpeed > 0 ? latestSpeed.toFixed(1) + ' km/h' : '--'}</strong>`;
+                
+                const frameData = trackingData[frameIdx];
+
+                if (frameData) {
+                    while(playersGroup.children.length > 0){ 
+                        playersGroup.remove(playersGroup.children[0]); 
+                    }
+                    
+                    frameData.players.forEach(p => {
+                        if (p.real_world_x !== null && p.real_world_y !== null) {
+                            playersGroup.add(createPlayerSkeleton(p));
+                        }
+                    });
+
+                    if (frameData.ball && homography) {
+                        const floorPos = applyHomography(frameData.ball.x, frameData.ball.y);
+                        if (floorPos) {
+                            ballMesh.position.set(floorPos.x, 1.0, floorPos.z); // Render ball slightly above shadow
+                            shadowMesh.position.set(floorPos.x, 0.02, floorPos.z);
+                            
+                            ballMesh.visible = true;
+                            shadowMesh.visible = true;
+                        }
+                    } else {
+                        ballMesh.visible = false;
+                        shadowMesh.visible = false;
+                    }
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+        
+        animate();
+
+        // Handle Resize
+        window.addEventListener('resize', () => {
+            const w = container.clientWidth;
+            const h = container.clientHeight;
+            camera.aspect = w / h;
+            camera.updateProjectionMatrix();
+            renderer.setSize(w, h);
+        });
+
+    </script>
+</body>
+</html>
