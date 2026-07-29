@@ -26,6 +26,8 @@ python dev/calibrate.py --video_path assets/videos/match.mp4
 ## 4. Run the Pipeline
 *Once calibrated, run the automated pipeline to generate the 3D data and 2D overlay.*
 ```bash
+export KMP_DUPLICATE_LIB_OK=TRUE
+set KMP_DUPLICATE_LIB_OK=TRUE
 python dev/main.py --video_path assets/videos/match.mp4
 ```
 
