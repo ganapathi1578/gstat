@@ -1,9 +1,12 @@
 # G-Stat Quickstart
 
 ## 1. Clone the Repository
+*This repository uses Git Large File Storage (LFS) to store AI checkpoints and high-resolution videos. You must install Git LFS first.*
 ```bash
+git lfs install
 git clone git@github.com:ganapathi1578/gstat.git
 cd gstat
+git lfs pull
 ```
 
 ## 2. Install Dependencies
