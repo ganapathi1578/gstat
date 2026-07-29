@@ -3,6 +3,7 @@ from dataclasses import dataclass
 @dataclass
 class Config:
     video_path: str
+    calibration_path: str = ""
     output_dir: str = "./output"
 
     # Player pose model (yolov11n-pose.pt recommended, auto-downloaded if missing)

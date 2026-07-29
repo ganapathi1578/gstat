@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import sys
+from pathlib import Path
 from config import Config
 from pipeline import SportsHybridPipeline
 
@@ -24,8 +26,19 @@ def parse_args():
 def main():
     args = parse_args()
 
+    video_path = Path(args.video_path)
+    if not video_path.exists():
+        raise FileNotFoundError(f"Video file not found: {video_path}")
+        
+    calibration_path = video_path.parent / f"{video_path.stem}_calib.json"
+    if not calibration_path.exists():
+        print(f"\n[ERROR] Missing calibration file: {calibration_path}")
+        print(f"Please run the calibration tool first:\n    python dev/calibrate.py --video_path \"{video_path}\"\n")
+        sys.exit(1)
+
     cfg = Config(
         video_path                  = args.video_path,
+        calibration_path            = str(calibration_path),
         output_dir                  = args.output_dir,
         pose_model_path             = args.pose_model_path,
         ball_seed_detector_path     = args.ball_seed_detector_path,

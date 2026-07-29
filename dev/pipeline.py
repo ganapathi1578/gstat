@@ -31,7 +31,10 @@ class SportsHybridPipeline:
         self.active_player_ids = set()
 
         # 1. Load Calibration
-        with open("court_calibration_13handles.json", "r") as f:
+        if not getattr(cfg, 'calibration_path', None):
+            raise ValueError("Calibration path must be provided in Config.")
+            
+        with open(cfg.calibration_path, "r") as f:
             calib = json.load(f)
             
         # 2. Extract screen corners (Points 0, 4, 24, 20)
