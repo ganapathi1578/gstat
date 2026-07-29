@@ -9,10 +9,20 @@ cd gstat
 git lfs pull
 ```
 
-## 2. Install Dependencies
+## 2. Set Up Virtual Environment & Install Dependencies
+Create and activate a clean Python virtual environment, then install dependencies:
+
+**On Windows (PowerShell / Command Prompt):**
+```powershell
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+**On Linux / macOS:**
 ```bash
-conda create -n gstat_env python=3.10
-conda activate gstat_env
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
