@@ -133,12 +133,12 @@ class HybridBallTracker:
 
     def _predict_state(self):
         p = self.kf.predict()
-        return float(p[0]), float(p[1]), float(p[2]), float(p[3])
+        return float(p[0,0]), float(p[1,0]), float(p[2,0]), float(p[3,0])
 
     def _correct_state(self, x, y):
         m = np.array([[np.float32(x)],[np.float32(y)]])
         c = self.kf.correct(m)
-        return float(c[0]), float(c[1])
+        return float(c[0,0]), float(c[1,0])
 
     def initialize(self, x, y, conf=1.0):
         self._kf_set(x, y, 0.0, 0.0)
